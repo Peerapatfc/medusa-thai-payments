@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepare": "npm run build"
   },
   "peerDependencies": {
     "@medusajs/framework": "^2.0.0"
