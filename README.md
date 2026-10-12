@@ -86,7 +86,12 @@ const session = paymentCollection.payment_sessions.find((s) => s.provider_id ===
 const qrUrl = session.data.qr_image_url as string
 ```
 
-Render it as an `<img>`, then wait for the cart to complete (poll the cart, or listen for the order). Do not complete the cart client-side on your own.
+Render it as an `<img>`, then keep calling `POST /store/carts/:id/complete` every couple of seconds. It is safe to poll: it only succeeds after Opn's webhook has reached Medusa and the payment is captured, and answers 400 until then. The charge must never be trusted from the browser.
+
+Working examples:
+
+- [`thai-commerce-storefront`](https://github.com/Peerapatfc/thai-commerce-storefront): a small Next.js checkout that shows the QR and polls (`storefront/components/checkout/payment-step.tsx`).
+- The official [Medusa Next.js starter](https://github.com/medusajs/nextjs-starter-medusa) does not know PromptPay. It lists the provider by its raw id and leaves "Place order" disabled. [This patch](https://github.com/Peerapatfc/thai-commerce-storefront/blob/main/docs/nextjs-starter-promptpay.patch) (about 80 lines) adds the QR button; tested against starter commit `9818886`.
 
 ## Develop
 
