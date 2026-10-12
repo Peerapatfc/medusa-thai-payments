@@ -1,0 +1,41 @@
+{
+  "name": "medusa-thai-payments",
+  "version": "0.1.0",
+  "description": "Medusa v2 payment provider for Thai payments (PromptPay QR via Opn Payments / Omise)",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@medusajs/framework": "^2.0.0"
+  },
+  "devDependencies": {
+    "@medusajs/framework": "^2.21.2",
+    "@medusajs/types": "^2.21.2",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./providers/promptpay": "./dist/providers/promptpay/index.js",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "medusa",
+    "medusajs",
+    "payment",
+    "promptpay",
+    "thailand",
+    "omise",
+    "opn"
+  ]
+}
