@@ -33,6 +33,8 @@ export type PromptPayOptions = {
   webhookSecret?: string
   /** Minutes until the QR code expires. Omise allows at most 24h (1440). */
   qrExpiresInMinutes?: number
+  /** Override the Omise API origin, e.g. to point at a local mock. Defaults to https://api.omise.co. */
+  apiBaseUrl?: string
   /** Injected for tests. */
   fetch?: FetchLike
 }
@@ -66,7 +68,7 @@ export class PromptPayProviderService extends AbstractPaymentProvider<PromptPayO
   constructor(container: Record<string, unknown>, options: PromptPayOptions) {
     super(container, options)
     this.options_ = options
-    this.client_ = new OmiseClient(options.secretKey, options.fetch)
+    this.client_ = new OmiseClient(options.secretKey, options.fetch, options.apiBaseUrl)
   }
 
   /** Maps an Omise charge status onto a Medusa payment session status. */
