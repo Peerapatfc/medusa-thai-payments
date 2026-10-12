@@ -55,6 +55,7 @@ module.exports = defineConfig({
               secretKey: process.env.OMISE_SECRET_KEY,       // skey_test_... or skey_...
               webhookSecret: process.env.OMISE_WEBHOOK_SECRET, // base64 secret, recommended
               qrExpiresInMinutes: 30,                        // optional, max 1440
+              // apiBaseUrl: "http://localhost:4010",        // optional: point at a mock Omise in tests
             },
           },
         ],
@@ -72,7 +73,7 @@ Webhook URL to register in the Opn dashboard (event `charge.complete`):
 https://<your-backend>/hooks/payment/promptpay_promptpay
 ```
 
-> Check the route against your Medusa version's docs for payment webhooks (`/hooks/payment/{identifier}_{id}`).
+> The route is `/hooks/payment/{identifier}_{id}`, confirmed on Medusa 2.21.2.
 >
 > PromptPay must be enabled on your Opn account first (Thai merchants only; Opn asks you to request it).
 
@@ -99,7 +100,8 @@ npm run build
 ## Status
 
 - [x] Unit-tested against mocked Opn responses
-- [ ] Verified end to end against an Opn sandbox account and a running Medusa instance
+- [x] Verified in a running Medusa 2.21.2 instance against a local mock of the Omise API: QR session, signed webhook, cart completion, payment capture, refund, and a forged webhook being ignored
+- [ ] Verified against a real Opn sandbox account
 - [ ] Example storefront (planned: `thai-commerce-storefront`)
 
 ## License
