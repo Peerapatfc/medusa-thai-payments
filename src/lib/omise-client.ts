@@ -17,8 +17,6 @@ export type OmiseCharge = {
   }
 }
 
-export type OmiseRefund = { id: string; object: "refund"; amount: number; charge: string }
-
 export type FetchLike = typeof fetch
 
 export class OmiseApiError extends Error {
@@ -73,11 +71,5 @@ export class OmiseClient {
 
   retrieveCharge(id: string): Promise<OmiseCharge> {
     return this.request<OmiseCharge>("GET", `/charges/${encodeURIComponent(id)}`)
-  }
-
-  createRefund(chargeId: string, amount: number): Promise<OmiseRefund> {
-    return this.request<OmiseRefund>("POST", `/charges/${encodeURIComponent(chargeId)}/refunds`, {
-      amount: String(amount),
-    })
   }
 }

@@ -1,4 +1,4 @@
-import { AbstractPaymentProvider } from "@medusajs/framework/utils"
+import { AbstractPaymentProvider, MedusaError } from "@medusajs/framework/utils"
 import type {
   AuthorizePaymentInput,
   AuthorizePaymentOutput,
@@ -22,8 +22,8 @@ import type {
   UpdatePaymentOutput,
   WebhookActionResult,
 } from "@medusajs/types"
-import { fromSubunit, toSubunit } from "../../lib/amount"
-import { OmiseCharge, OmiseClient, FetchLike } from "../../lib/omise-client"
+import { fromSubunit, toNumber, toSubunit } from "../../lib/amount"
+import { FetchLike, OmiseApiError, OmiseCharge, OmiseClient } from "../../lib/omise-client"
 import { verifyOmiseSignature } from "../../lib/signature"
 
 export type PromptPayOptions = {
@@ -33,6 +33,12 @@ export type PromptPayOptions = {
   webhookSecret?: string
   /** Minutes until the QR code expires. Omise allows at most 24h (1440). */
   qrExpiresInMinutes?: number
+  /**
+   * Opn Payments cannot refund PromptPay charges ("PromptPay charges cannot be voided or refunded
+   * through Omise"). By default a refund in Medusa fails with a clear message. Set this to true to let
+   * Medusa record the refund instead, when you pay the customer back yourself (for example by bank transfer).
+   */
+  allowManualRefunds?: boolean
   /** Override the Omise API origin, e.g. to point at a local mock. Defaults to https://api.omise.co. */
   apiBaseUrl?: string
   /** Injected for tests. */
@@ -85,6 +91,19 @@ export class PromptPayProviderService extends AbstractPaymentProvider<PromptPayO
     }
   }
 
+  /** Turns Opn API failures into Medusa errors so Admin and the Store API show the real reason. */
+  private async omise<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call()
+    } catch (e) {
+      if (e instanceof OmiseApiError) {
+        const type = e.status >= 400 && e.status < 500 ? MedusaError.Types.INVALID_DATA : MedusaError.Types.UNEXPECTED_STATE
+        throw new MedusaError(type, `Opn Payments: ${e.message}`)
+      }
+      throw e
+    }
+  }
+
   private toData(charge: OmiseCharge, sessionId?: string): PromptPayData {
     return {
       charge_id: charge.id,
@@ -110,12 +129,12 @@ export class PromptPayProviderService extends AbstractPaymentProvider<PromptPayO
     const expiresAt = this.options_.qrExpiresInMinutes
       ? new Date(Date.now() + this.options_.qrExpiresInMinutes * 60_000).toISOString()
       : undefined
-    const charge = await this.client_.createPromptPayCharge({
+    const charge = await this.omise(() => this.client_.createPromptPayCharge({
       amount: toSubunit(amount),
       currency,
       sessionId,
       expiresAt,
-    })
+    }))
     return this.toData(charge, sessionId)
   }
 
@@ -141,7 +160,7 @@ export class PromptPayProviderService extends AbstractPaymentProvider<PromptPayO
   }
 
   async getPaymentStatus(input: GetPaymentStatusInput): Promise<GetPaymentStatusOutput> {
-    const charge = await this.client_.retrieveCharge(this.chargeIdOf(input.data))
+    const charge = await this.omise(() => this.client_.retrieveCharge(this.chargeIdOf(input.data)))
     return {
       status: PromptPayProviderService.mapStatus(charge.status),
       data: this.toData(charge, input.data?.session_id as string | undefined),
@@ -149,13 +168,13 @@ export class PromptPayProviderService extends AbstractPaymentProvider<PromptPayO
   }
 
   async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {
-    const charge = await this.client_.retrieveCharge(this.chargeIdOf(input.data))
+    const charge = await this.omise(() => this.client_.retrieveCharge(this.chargeIdOf(input.data)))
     return { data: this.toData(charge, input.data?.session_id as string | undefined) }
   }
 
   async capturePayment(input: CapturePaymentInput): Promise<CapturePaymentOutput> {
     // Funds are already settled once the customer pays; just confirm with Omise.
-    const charge = await this.client_.retrieveCharge(this.chargeIdOf(input.data))
+    const charge = await this.omise(() => this.client_.retrieveCharge(this.chargeIdOf(input.data)))
     if (charge.status !== "successful") {
       throw new Error(`Cannot capture PromptPay charge ${charge.id}: status is ${charge.status}`)
     }
@@ -163,10 +182,21 @@ export class PromptPayProviderService extends AbstractPaymentProvider<PromptPayO
   }
 
   async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentOutput> {
-    const chargeId = this.chargeIdOf(input.data)
-    await this.client_.createRefund(chargeId, toSubunit(input.amount))
-    const charge = await this.client_.retrieveCharge(chargeId)
-    return { data: this.toData(charge, input.data?.session_id as string | undefined) }
+    if (!this.options_.allowManualRefunds) {
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        "PromptPay charges cannot be refunded through Opn Payments. Refund the customer outside Medusa " +
+          "(for example by bank transfer). To record such refunds in Medusa, set `allowManualRefunds: true` on the provider."
+      )
+    }
+    // Nothing is sent to Opn: the merchant pays the customer back and Medusa only records the amount.
+    const previous = Array.isArray(input.data?.manual_refunds) ? (input.data?.manual_refunds as unknown[]) : []
+    return {
+      data: {
+        ...input.data,
+        manual_refunds: [...previous, { amount: toNumber(input.amount), recorded_at: new Date().toISOString() }],
+      },
+    }
   }
 
   async cancelPayment(input: CancelPaymentInput): Promise<CancelPaymentOutput> {
@@ -199,7 +229,8 @@ export class PromptPayProviderService extends AbstractPaymentProvider<PromptPayO
     }
 
     // Never trust the webhook body for status: re-fetch the charge from Omise.
-    const charge = await this.client_.retrieveCharge(event.data.id)
+    const chargeId = event.data.id
+    const charge = await this.omise(() => this.client_.retrieveCharge(chargeId))
     const sessionId = charge.metadata?.session_id
     if (!sessionId) return { action: "not_supported" }
 

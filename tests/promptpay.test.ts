@@ -133,11 +133,31 @@ describe("PromptPayProviderService", () => {
     expect(fresh.data).toMatchObject({ charge_id: "chrg_test_2", amount: 20000 })
   })
 
-  it("refunds in satang", async () => {
-    const f = mockFetch({ body: { object: "refund", id: "rfnd_1", amount: 5000, charge: "chrg_test_1" } }, { body: charge({ status: "successful" }) })
-    await provider(f).refundPayment({ amount: 50, data: { charge_id: "chrg_test_1" } })
-    expect(f.mock.calls[0][0]).toBe("https://api.omise.co/charges/chrg_test_1/refunds")
-    expect(new URLSearchParams(f.mock.calls[0][1].body).get("amount")).toBe("5000")
+  describe("refunds", () => {
+    // Opn: "PromptPay charges cannot be voided or refunded through Omise" (confirmed against the sandbox).
+    it("fails with a clear message by default and never calls Opn", async () => {
+      const f = mockFetch()
+      await expect(provider(f).refundPayment({ amount: 50, data: { charge_id: "chrg_test_1" } })).rejects.toThrow(
+        /cannot be refunded through Opn Payments/
+      )
+      expect(f).not.toHaveBeenCalled()
+    })
+
+    it("records a manual refund without calling Opn when allowManualRefunds is set", async () => {
+      const f = mockFetch()
+      const p = provider(f, { allowManualRefunds: true })
+      const first = await p.refundPayment({ amount: 50, data: { charge_id: "chrg_test_1" } })
+      const second = await p.refundPayment({ amount: 20.5, data: first.data })
+      expect(f).not.toHaveBeenCalled()
+      const refunds = second.data?.manual_refunds as Array<{ amount: number }>
+      expect(refunds.map((r) => r.amount)).toEqual([50, 20.5])
+      expect(second.data?.charge_id).toBe("chrg_test_1")
+    })
+  })
+
+  it("reports Opn API failures as Medusa errors with the real reason", async () => {
+    const f = mockFetch({ status: 400, body: { object: "error", code: "failed_refund", message: "charge can't be refunded" } })
+    await expect(provider(f).getPaymentStatus({ data: { charge_id: "chrg_test_1" } })).rejects.toThrow("Opn Payments: charge can't be refunded")
   })
 
   it("refuses to capture an unpaid charge", async () => {
